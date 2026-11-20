@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prusa3d/prusa-connect/sdk/accessapi"
 	"github.com/prusa3d/prusa-connect/sdk/deviceapi"
 	"github.com/prusa3d/prusa-connect/sdk/routesapi"
 	"github.com/prusa3d/prusa-connect/sdk/wirerpc"
@@ -88,12 +89,48 @@ func (f *fakeFleet) Get(_ context.Context, params deviceapi.GetParams) (deviceap
 	return deviceapi.Device{ID: params.ID, State: tree}, nil
 }
 
-// rig builds a configured module over a fake Home Assistant.
+// fakeAccess answers what the host says a person may do. By default every
+// person may do everything. A test denies an action, or makes the host fail.
+type fakeAccess struct {
+	mu    sync.Mutex
+	deny  map[string]bool
+	err   error
+	asked []accessapi.CheckParams
+}
+
+func (f *fakeAccess) Check(_ context.Context, params accessapi.CheckParams) (accessapi.Decision, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.asked = append(f.asked, params)
+	if f.err != nil {
+		return accessapi.Decision{}, f.err
+	}
+
+	return accessapi.Decision{Allowed: !f.deny[params.Action]}, nil
+}
+
+func (f *fakeAccess) questions() []accessapi.CheckParams {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return append([]accessapi.CheckParams(nil), f.asked...)
+}
+
+// rig builds a configured module over a fake Home Assistant, for a person the
+// host lets do everything.
 func rig(t *testing.T, haState string, devices *fakeFleet) (wirerpc.Methods, *fakeHA) {
 	t.Helper()
 
+	return rigAsking(t, haState, devices, &fakeAccess{})
+}
+
+// rigAsking is rig with the host's answers to what a person may do.
+func rigAsking(t *testing.T, haState string, devices *fakeFleet, asking *fakeAccess) (wirerpc.Methods, *fakeHA) {
+	t.Helper()
+
 	fake := newFakeHA(t, haState)
-	held := newService(devices, time.Second)
+	held := newService(devices, asking, time.Second)
 
 	serves := methods(held)
 	if err := configure(t, serves, map[string]any{
@@ -487,7 +524,7 @@ func TestAHomeAssistantThatRedirectsIsNotFollowed(t *testing.T) {
 	redirecting := httptest.NewServer(http.RedirectHandler(elsewhere.URL, http.StatusFound))
 	t.Cleanup(redirecting.Close)
 
-	held := newService(&fakeFleet{}, time.Second)
+	held := newService(&fakeFleet{}, &fakeAccess{}, time.Second)
 	serves := methods(held)
 	configure(t, serves, map[string]any{
 		"ha_url": redirecting.URL, "ha_token": token, "switches": map[string]string{"printer-1": "switch.mk4_plug"},
@@ -511,7 +548,7 @@ func TestASlowHomeAssistantTimesOut(t *testing.T) {
 	}))
 	t.Cleanup(slow.Close)
 
-	held := newService(&fakeFleet{}, 50*time.Millisecond)
+	held := newService(&fakeFleet{}, &fakeAccess{}, 50*time.Millisecond)
 	serves := methods(held)
 	configure(t, serves, map[string]any{
 		"ha_url": slow.URL, "ha_token": token, "switches": map[string]string{"printer-1": "switch.mk4_plug"},
@@ -525,17 +562,17 @@ func TestConfigureRefusesSettingsThatCannotWork(t *testing.T) {
 
 	good := func() map[string]any {
 		return map[string]any{
-			"ha_url": "http://homeassistant.local:8123", "ha_token": "t", "switches": map[string]string{"p": "switch.a_b"},
+			"ha_url": "http://127.0.0.1:8123", "ha_token": "t", "switches": map[string]string{"p": "switch.a_b"},
 		}
 	}
 
-	if err := configure(t, methods(newService(&fakeFleet{}, time.Second)), good()); err != nil {
+	if err := configure(t, methods(newService(&fakeFleet{}, &fakeAccess{}, time.Second)), good()); err != nil {
 		t.Fatalf("good settings were refused: %v", err)
 	}
 
 	mistakes := map[string]func(map[string]any){
-		"no scheme":      func(s map[string]any) { s["ha_url"] = "homeassistant.local:8123" },
-		"ftp":            func(s map[string]any) { s["ha_url"] = "ftp://homeassistant.local" },
+		"no scheme":      func(s map[string]any) { s["ha_url"] = "127.0.0.1:8123" },
+		"ftp":            func(s map[string]any) { s["ha_url"] = "ftp://127.0.0.1" },
 		"empty token":    func(s map[string]any) { s["ha_token"] = " " },
 		"not a switch":   func(s map[string]any) { s["switches"] = map[string]string{"p": "light.kitchen"} },
 		"a path":         func(s map[string]any) { s["switches"] = map[string]string{"p": "switch.a/../b"} },
@@ -548,7 +585,7 @@ func TestConfigureRefusesSettingsThatCannotWork(t *testing.T) {
 		settings := good()
 		mutate(settings)
 
-		if err := configure(t, methods(newService(&fakeFleet{}, time.Second)), settings); err == nil {
+		if err := configure(t, methods(newService(&fakeFleet{}, &fakeAccess{}, time.Second)), settings); err == nil {
 			t.Errorf("%s: the settings were accepted", name)
 		}
 	}
@@ -590,4 +627,125 @@ func TestAPathTheModuleDoesNotServeReportsWhatItSaw(t *testing.T) {
 	if answered.Status != http.StatusNotFound || !strings.Contains(string(answered.Body), "/elsewhere") {
 		t.Errorf("answered %d: %s", answered.Status, answered.Body)
 	}
+}
+
+func TestAViewerCannotSwitchAPrinter(t *testing.T) {
+	t.Parallel()
+
+	// The host says this person may see the printer and may not operate it.
+	state := map[string]string{"/state": `"IDLE"`, "/tools/0/nozzle_temp": `24`}
+
+	for _, body := range []string{`{"on":true}`, `{"on":false}`} {
+		asking := &fakeAccess{deny: map[string]bool{actionOperate: true}}
+		serves, fake := rigAsking(t, "on", &fakeFleet{state: state}, asking)
+
+		expectRefusal(t, post(t, serves, "printer-1", body), http.StatusForbidden, "ha-power/NOT_ALLOWED")
+
+		if calls := fake.recorded(); len(calls) != 0 {
+			t.Errorf("%s: Home Assistant was called: %+v", body, calls)
+		}
+	}
+}
+
+func TestTheModuleAsksTheHostAboutThePersonAndThePrinter(t *testing.T) {
+	t.Parallel()
+
+	asking := &fakeAccess{}
+	serves, _ := rigAsking(t, "off", &fakeFleet{}, asking)
+
+	get(t, serves, "printer-1")
+	post(t, serves, "printer-1", `{"on":true}`)
+
+	want := []accessapi.CheckParams{
+		{Subject: "user:alice", Action: "observe", ObjectType: "device", ObjectID: "printer-1"},
+		{Subject: "user:alice", Action: "operate", ObjectType: "device", ObjectID: "printer-1"},
+	}
+
+	got := asking.questions()
+	if len(got) != len(want) {
+		t.Fatalf("the host was asked %+v", got)
+	}
+
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("question %d was %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}
+
+func TestAPersonWhoMayNotObserveAPrinterCannotReadItsPlug(t *testing.T) {
+	t.Parallel()
+
+	asking := &fakeAccess{deny: map[string]bool{actionObserve: true}}
+	serves, fake := rigAsking(t, "on", &fakeFleet{}, asking)
+
+	expectRefusal(t, get(t, serves, "printer-1"), http.StatusForbidden, "ha-power/NOT_ALLOWED")
+
+	// The answer is the same for a printer with no plug, so it says nothing
+	// about which printers have one.
+	expectRefusal(t, get(t, serves, "printer-2"), http.StatusForbidden, "ha-power/NOT_ALLOWED")
+
+	if calls := fake.recorded(); len(calls) != 0 {
+		t.Errorf("Home Assistant was called: %+v", calls)
+	}
+}
+
+func TestAPersonWhoMayNotOperateAPrinterLearnsNothingAboutItsMapping(t *testing.T) {
+	t.Parallel()
+
+	asking := &fakeAccess{deny: map[string]bool{actionOperate: true}}
+	serves, _ := rigAsking(t, "on", &fakeFleet{}, asking)
+
+	mapped := post(t, serves, "printer-1", `{"on":true}`)
+	unmapped := post(t, serves, "printer-2", `{"on":true}`)
+
+	if mapped.Status != http.StatusForbidden || unmapped.Status != http.StatusForbidden {
+		t.Errorf("a mapped printer answered %d and an unmapped one %d", mapped.Status, unmapped.Status)
+	}
+}
+
+func TestAHostThatCannotAnswerRefusesTheSwitchAndTheRead(t *testing.T) {
+	t.Parallel()
+
+	for _, failure := range []error{accessapi.ErrDenied, accessapi.ErrUnknownSubject, errors.New("the host is busy")} {
+		serves, fake := rigAsking(t, "on", &fakeFleet{}, &fakeAccess{err: failure})
+
+		said := expectRefusal(t, post(t, serves, "printer-1", `{"on":true}`), http.StatusServiceUnavailable, "ha-power/ACCESS_UNREADABLE")
+		if !said.Retryable {
+			t.Error("an unanswered question is worth asking again")
+		}
+
+		expectRefusal(t, get(t, serves, "printer-1"), http.StatusServiceUnavailable, "ha-power/ACCESS_UNREADABLE")
+
+		if calls := fake.recorded(); len(calls) != 0 {
+			t.Errorf("Home Assistant was called: %+v", calls)
+		}
+	}
+}
+
+func TestARequestWithNoPersonIsRefused(t *testing.T) {
+	t.Parallel()
+
+	asking := &fakeAccess{}
+	serves, fake := rigAsking(t, "on", &fakeFleet{}, asking)
+
+	// No principal means the call did not come through the host. An empty
+	// subject to the host would ask about the module itself, so the module
+	// never asks.
+	answered := callRoutes(t, serves, routesapi.Request{
+		Method: http.MethodPost, Path: "/power/printer-1", Body: []byte(`{"on":true}`),
+	})
+	expectRefusal(t, answered, http.StatusForbidden, "ha-power/NOT_ALLOWED")
+
+	if len(asking.questions()) != 0 || len(fake.recorded()) != 0 {
+		t.Error("the module asked the host or Home Assistant about a request with no person")
+	}
+}
+
+func TestADeviceIdTheHostCannotReadIsNotAllowed(t *testing.T) {
+	t.Parallel()
+
+	serves, _ := rigAsking(t, "on", &fakeFleet{}, &fakeAccess{err: accessapi.ErrInvalidQuestion})
+
+	expectRefusal(t, post(t, serves, "printer-1", `{"on":true}`), http.StatusForbidden, "ha-power/NOT_ALLOWED")
 }

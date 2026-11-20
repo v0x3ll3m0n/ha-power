@@ -55,6 +55,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prusa3d/prusa-connect/sdk/accessapi"
 	"github.com/prusa3d/prusa-connect/sdk/deviceapi"
 	"github.com/prusa3d/prusa-connect/sdk/extension"
 	"github.com/prusa3d/prusa-connect/sdk/routesapi"
@@ -65,7 +66,7 @@ import (
 // What this child reports when the host asks it what it is.
 const (
 	name    = "ha-power"
-	release = extension.Version("0.1.1")
+	release = extension.Version("0.1.2")
 )
 
 // openAPI is the fragment describing the two routes, with every path relative
@@ -136,7 +137,7 @@ func (s Settings) checked() (Settings, error) {
 
 	address, err := url.Parse(held.HAURL)
 	if err != nil || (address.Scheme != "http" && address.Scheme != "https") || address.Host == "" {
-		return Settings{}, fmt.Errorf("%w: ha_url must be an http or https address, such as http://homeassistant.local:8123", errSettings)
+		return Settings{}, fmt.Errorf("%w: ha_url must be an http or https address with a host and a port", errSettings)
 	}
 
 	if held.HAToken == "" {
@@ -187,16 +188,31 @@ type fleet interface {
 	Get(ctx context.Context, params deviceapi.GetParams) (deviceapi.Device, error)
 }
 
+// access is the one call this module makes to ask the host what a person may
+// do. A test hands in a fake.
+type access interface {
+	Check(ctx context.Context, params accessapi.CheckParams) (accessapi.Decision, error)
+}
+
+// The actions the module asks the host about, declared under `checks:` in
+// module.yaml. The module takes neither as itself.
+const (
+	actionObserve = "observe"
+	actionOperate = "operate"
+)
+
 // service is everything the routes need.
 type service struct {
 	settings settingsHolder
 	fleet    fleet
+	access   access
 	http     *http.Client
 }
 
-func newService(devices fleet, timeout time.Duration) *service {
+func newService(devices fleet, asking access, timeout time.Duration) *service {
 	return &service{
-		fleet: devices,
+		fleet:  devices,
+		access: asking,
 		http: &http.Client{
 			Timeout: timeout,
 			// A redirect is never followed: the token rides on this request, and
@@ -241,7 +257,7 @@ func run() error {
 		return fmt.Errorf("build the session: %w", err)
 	}
 
-	held := newService(deviceapi.NewClient(conn), haTimeout)
+	held := newService(deviceapi.NewClient(conn), accessapi.NewClient(conn), haTimeout)
 
 	for method, handler := range methods(held) {
 		serves[method] = handler
@@ -316,7 +332,17 @@ type PowerState struct {
 
 // read answers what Home Assistant says about one printer's plug.
 func (s *service) read(w http.ResponseWriter, r *http.Request) {
-	entity, base, token, mapped := s.settings.entityOf(r.PathValue("device"))
+	device := r.PathValue("device")
+
+	// The person is asked about before the mapping is read, so a person who
+	// may not see a printer learns nothing about whether it has a plug.
+	if err := s.allowed(r, actionObserve, device); err != nil {
+		refuse(w, err)
+
+		return
+	}
+
+	entity, base, token, mapped := s.settings.entityOf(device)
 	if !mapped {
 		refuse(w, errNotMapped)
 
@@ -343,6 +369,15 @@ func (s *service) read(w http.ResponseWriter, r *http.Request) {
 // write turns one printer's plug on or off.
 func (s *service) write(w http.ResponseWriter, r *http.Request) {
 	device := r.PathValue("device")
+
+	// Who asks is decided first. The host takes operate_resource on this
+	// module, which says a person may use the module. It does not say they may
+	// operate this printer, so the module asks the host that, as the person.
+	if err := s.allowed(r, actionOperate, device); err != nil {
+		refuse(w, err)
+
+		return
+	}
 
 	// The entity is looked up from the operator's mapping and from nothing the
 	// caller sent. The body carries one bool and no entity id, and a body that
@@ -386,6 +421,36 @@ func (s *service) write(w http.ResponseWriter, r *http.Request) {
 	}
 
 	answer(w, http.StatusOK, map[string]bool{"on": on})
+}
+
+// allowed asks the host whether the person who made the request may take the
+// action on the printer. It fails closed: no person, no answer and no yes all
+// refuse the request. The person is the principal the host authorized for this
+// request, and nothing the caller wrote.
+func (s *service) allowed(r *http.Request, action, device string) error {
+	person := routesapi.PrincipalOf(r)
+	if person == "" {
+		return errNotAllowed
+	}
+
+	decision, err := s.access.Check(r.Context(), accessapi.CheckParams{
+		Subject:    person,
+		Action:     action,
+		ObjectType: "device",
+		ObjectID:   device,
+	})
+
+	switch {
+	case errors.Is(err, accessapi.ErrInvalidQuestion):
+		// A device id the host cannot even read is no printer of this person.
+		return errNotAllowed
+	case err != nil:
+		return fmt.Errorf("%w: %w", errAccessUnreadable, err)
+	case !decision.Allowed:
+		return errNotAllowed
+	}
+
+	return nil
 }
 
 // wantedOf reads {"on": bool}. The field is required, so a body that forgot it
@@ -514,16 +579,18 @@ func (s *service) callHA(ctx context.Context, method, address, token string, bod
 
 // The refusals this module makes, each with its own status and code in refuse.
 var (
-	errNotMapped       = errors.New("this printer has no plug in the switches setting")
-	errNoDevice        = errors.New("this printer is not one you may switch")
-	errBadBody         = errors.New("the body must be {\"on\": true} or {\"on\": false}")
-	errPrinterBusy     = errors.New("the printer is not at rest")
-	errNozzleHot       = errors.New("the nozzle is hot")
-	errStateUnreadable = errors.New("the state of the printer could not be read")
-	errHAUnreachable   = errors.New("Home Assistant could not be reached")
-	errHAAuth          = errors.New("Home Assistant refused the token")
-	errHANoEntity      = errors.New("Home Assistant has no such entity")
-	errHAFailed        = errors.New("Home Assistant failed")
+	errNotMapped        = errors.New("this printer has no plug in the switches setting")
+	errNoDevice         = errors.New("this printer is not one you may switch")
+	errNotAllowed       = errors.New("you may not use the power of this printer")
+	errAccessUnreadable = errors.New("your permission could not be checked")
+	errBadBody          = errors.New("the body must be {\"on\": true} or {\"on\": false}")
+	errPrinterBusy      = errors.New("the printer is not at rest")
+	errNozzleHot        = errors.New("the nozzle is hot")
+	errStateUnreadable  = errors.New("the state of the printer could not be read")
+	errHAUnreachable    = errors.New("Home Assistant could not be reached")
+	errHAAuth           = errors.New("Home Assistant refused the token")
+	errHANoEntity       = errors.New("Home Assistant has no such entity")
+	errHAFailed         = errors.New("Home Assistant failed")
 )
 
 // refuse answers one refusal as RFC 9457 names it, which is the shape the
@@ -539,6 +606,10 @@ func refuse(w http.ResponseWriter, err error) {
 		status, code, title = http.StatusNotFound, "ha-power/NOT_MAPPED", "the printer has no plug"
 	case errors.Is(err, errNoDevice):
 		status, code, title = http.StatusNotFound, "ha-power/NO_DEVICE", "no such printer"
+	case errors.Is(err, errNotAllowed):
+		status, code, title = http.StatusForbidden, "ha-power/NOT_ALLOWED", "you may not switch this printer"
+	case errors.Is(err, errAccessUnreadable):
+		status, code, title, retry = http.StatusServiceUnavailable, "ha-power/ACCESS_UNREADABLE", "your permission is unknown", true
 	case errors.Is(err, errBadBody):
 		status, code, title = http.StatusBadRequest, "ha-power/INVALID_BODY", "the request was not understood"
 	case errors.Is(err, errPrinterBusy):

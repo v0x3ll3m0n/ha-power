@@ -13,13 +13,13 @@ export interface paths {
         };
         /**
          * The state of a printer's plug
-         * @description Reads the plug the printer is mapped to from Home Assistant. A printer with no entry in the switches setting is refused with 404 and the code ha-power/NOT_MAPPED. A failure of Home Assistant is refused with 502. The host takes view_resource on the module's instance before this is called.
+         * @description Reads the plug the printer is mapped to from Home Assistant. A printer with no entry in the switches setting is refused with 404 and the code ha-power/NOT_MAPPED. A failure of Home Assistant is refused with 502. The host takes view_resource on the module's instance before this is called. The module then asks the host whether the caller may observe the printer, and refuses with 403 (ha-power/NOT_ALLOWED) when not, or with 503 (ha-power/ACCESS_UNREADABLE) when the host cannot answer.
          */
         get: operations["get-power"];
         put?: never;
         /**
          * Turn a printer's plug on or off
-         * @description Calls switch.turn_on or switch.turn_off in Home Assistant for the entity the printer is mapped to. The caller never names an entity. A printer with no entry in the switches setting is refused with 404. Turning off is refused with 409 while the printer is PRINTING, PAUSED or BUSY (ha-power/PRINTER_BUSY) or its nozzle is hotter than 50 degrees (ha-power/NOZZLE_HOT), and with 503 when the printer's state cannot be read (ha-power/STATE_UNREADABLE). The host takes operate_resource on the module's instance before this is called.
+         * @description Calls switch.turn_on or switch.turn_off in Home Assistant for the entity the printer is mapped to. The caller never names an entity. A printer with no entry in the switches setting is refused with 404. Turning off is refused with 409 while the printer is PRINTING, PAUSED or BUSY (ha-power/PRINTER_BUSY) or its nozzle is hotter than 50 degrees (ha-power/NOZZLE_HOT), and with 503 when the printer's state cannot be read (ha-power/STATE_UNREADABLE). The host takes operate_resource on the module's instance before this is called. The module then asks the host whether the caller may operate the printer, and refuses with 403 (ha-power/NOT_ALLOWED) when not, or with 503 (ha-power/ACCESS_UNREADABLE) when the host cannot answer. The check comes before the mapping is read, so a person who may not operate a printer learns nothing about its plug.
          */
         post: operations["set-power"];
         delete?: never;

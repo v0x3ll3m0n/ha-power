@@ -23,5 +23,7 @@
   "power.error.ha-power/STATE_UNREADABLE": "The state of the printer could not be read",
   "power.error.ha-power/NOT_MAPPED": "No plug is set for this printer",
   "power.error.ha-power/NO_DEVICE": "You may not switch this printer",
+  "power.error.ha-power/NOT_ALLOWED": "You may not switch this printer",
+  "power.error.ha-power/ACCESS_UNREADABLE": "Your permission could not be checked. Try again",
   "power.error.other": "The power could not be changed"
 }

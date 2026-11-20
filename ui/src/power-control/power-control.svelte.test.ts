@@ -223,6 +223,19 @@ describe('the power control', () => {
     await expect.element(toggle()).toBeEnabled();
   });
 
+  it('tells a person who may not operate the printer that they may not switch it', async () => {
+    const stub = started([state(true), refusal(403, 'ha-power/NOT_ALLOWED')]);
+    await drawn(stub);
+    await expect.element(toggle()).toBeEnabled();
+
+    flip();
+
+    await expect
+      .element(page.getByText('You may not switch this printer'))
+      .toBeVisible();
+    await expect.element(toggle()).toHaveAttribute('aria-checked', 'true');
+  });
+
   it('says a failure with no code in the words of the catalogue', async () => {
     const stub = started([state(false), { status: 500, body: 'broken' }]);
     await drawn(stub);

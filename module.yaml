@@ -16,7 +16,7 @@ codeowner: v0x3ll3m0n
 # The kind gives the service runtime, as in examples/spools. The browser half
 # rides in the same declaration as `service.assets`.
 kind: sink
-version: 0.1.1
+version: 0.1.2
 # The same license as Prusa Connect itself, as every module in this tree
 # carries it (see LICENSE).
 license: OCL v1.1 + Micro v1 + NoSaaS v1 + SWAtt v1
@@ -35,7 +35,7 @@ options:
   - key: ha_url
     type: url
     required: true
-    summary: The address of Home Assistant, such as http://homeassistant.local:8123.
+    summary: The address of Home Assistant, with its port. Use a host or an IP address the server can reach.
   - key: ha_token
     type: secret
     required: true
@@ -54,17 +54,26 @@ require:
 # the option and not a host. The process is the only place that connects.
 egress:
   - option: ha_url
-    ports: [8123]
+    # 8123 is Home Assistant's own port. 443 and 80 are for a Home Assistant
+    # behind a reverse proxy.
+    ports: [8123, 443, 80]
     from: process
     why: Reads the state of a plug and turns it on or off.
     sends: The long-lived access token and the id of one plug from the switches setting, only to the address in ha_url. Nothing else leaves the server.
 
-# No `permissions` key. This module acts only for the person the host
-# authorized. Before it turns a plug off it reads that printer as that person,
-# so a person who may not see a printer cannot switch its plug, and the module
-# takes nothing as itself. The host takes view_resource on the instance before
+# No `permissions` key: this module takes nothing as itself. It only asks the
+# host what a person may do, and asking is a check (ADR-20261106-jnb). The
+# module asks whether the person may observe a printer before it reads that
+# printer's plug, and whether they may operate it before it switches the plug.
+# A person who may only view a printer can read its state but cannot switch it.
+#
+# The host also takes view_resource on the instance before
 # GET /power/{device} and operate_resource before POST /power/{device}, which
-# openapi.json states on each operation.
+# openapi.json states on each operation. That says a person may use the module,
+# and the two checks say which printers they may use it on.
+checks:
+  - observe
+  - operate
 
 ui:
   entry: ui/index.js

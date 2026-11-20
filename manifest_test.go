@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -86,8 +87,35 @@ func TestTheEgressNamesTheHomeAssistantOptionOnItsPort(t *testing.T) {
 	}
 
 	one := held.Egress[0]
-	if one.Option != "ha_url" || len(one.Ports) != 1 || one.Ports[0] != 8123 || one.From != manifest.EgressFromProcess {
+	if one.Option != "ha_url" || !slices.Contains(one.Ports, 8123) || one.From != manifest.EgressFromProcess {
 		t.Errorf("the egress reads as %+v", one)
+	}
+}
+
+// TestTheModuleAsksAndTakesNothingAsItself holds the two checks the routes ask
+// the host, and no permission of the module's own.
+func TestTheModuleAsksAndTakesNothingAsItself(t *testing.T) {
+	t.Parallel()
+
+	held := parsed(t)
+
+	if len(held.Checks) != 2 || held.Checks[0] != actionObserve || held.Checks[1] != actionOperate {
+		t.Errorf("the checks read as %+v", held.Checks)
+	}
+
+	if len(held.Permissions) != 0 {
+		t.Errorf("the module asks for permissions it does not need: %+v", held.Permissions)
+	}
+}
+
+func TestTheEgressCoversAHomeAssistantBehindAProxy(t *testing.T) {
+	t.Parallel()
+
+	ports := parsed(t).Egress[0].Ports
+	for _, want := range []int{8123, 443, 80} {
+		if !slices.Contains(ports, want) {
+			t.Errorf("the egress does not list port %d: %v", want, ports)
+		}
 	}
 }
 

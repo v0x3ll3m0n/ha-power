@@ -55,6 +55,8 @@ these codes:
 | code | status | meaning |
 | --- | --- | --- |
 | `ha-power/NOT_MAPPED` | 404 | the printer has no entry in `switches` |
+| `ha-power/NOT_ALLOWED` | 403 | the person may not observe the printer (read) or operate it (switch) |
+| `ha-power/ACCESS_UNREADABLE` | 503 | the host could not say what the person may do |
 | `ha-power/NO_DEVICE` | 404 | the person may not see that printer |
 | `ha-power/INVALID_BODY` | 400 | the body is not `{"on": true}` or `{"on": false}` |
 | `ha-power/PRINTER_BUSY` | 409 | power off while the printer is PRINTING, PAUSED or BUSY |
@@ -79,9 +81,25 @@ The page makes the same check from `device.state` and disables the switch with
 the reason, but that is a convenience. Turning on is never refused for these
 reasons.
 
-Because the read is made as the person, a person who may not see a printer
-cannot switch its plug, even when they may operate the module. The manifest
-therefore has no `permissions` key: the module takes nothing as itself.
+## Who may switch a plug
+
+The host takes `operate_resource` on the module before a switch and
+`view_resource` before a read. That says a person may use the module, and it says
+nothing about which printers. So the module also asks the host, for the person
+who made the request:
+
+- before a read, may this person `observe` this printer?
+- before a switch, may this person `operate` this printer?
+
+The question comes before the mapping is read, and it fails closed: no answer,
+no person or no yes refuses the request. A person who may only view a printer
+can read nothing about its plug, or can read it but cannot switch it, depending
+on what the host grants them. The page shows the refusal as "You may not switch
+this printer".
+
+The module asks through `access.check`, so `module.yaml` lists `observe` and
+`operate` under `checks:`. A check writes no grant, and the module takes no
+permission as itself, so there is no `permissions:` key.
 
 There are two limits. The guard reads the **last state the printer reported**,
 including for a printer that has dropped off the network. A printer whose link
