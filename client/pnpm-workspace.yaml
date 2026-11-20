@@ -1,0 +1,14 @@
+# This package alone: without this file pnpm walks upwards and joins whatever
+# workspace it finds above it.
+packages:
+  - .
+
+savePrefix: ''
+verifyDepsBeforeRun: error
+enableGlobalVirtualStore: false
+
+# Until @prusa/connect is on npm, it comes from the pinned Prusa Connect
+# checkout in ../.core (see CORE_REF in the Makefile). Delete this block then.
+overrides:
+  '@prusa/connect': 'link:../.core/packages/typescript'
+autoInstallPeers: false

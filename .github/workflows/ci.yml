@@ -1,0 +1,41 @@
+name: CI
+# Every push and pull request runs the checks and builds the release, then
+# runs the marketplace's own checks on it with a throwaway key, so a release
+# the marketplace would refuse fails here and not at publishing.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: pnpm/action-setup@v5
+        with:
+          package_json_file: ui/package.json
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: make check
+        env:
+          PLAYWRIGHT_FLAGS: --with-deps
+      - run: make release
+      - name: Throwaway signing key
+        run: |
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$RUNNER_TEMP/throwaway.pem" 2>/dev/null
+          { echo 'THROWAWAY_KEY<<EOF'; cat "$RUNNER_TEMP/throwaway.pem"; echo 'EOF'; } >> "$GITHUB_ENV"
+      - name: Check the release (dry run)
+        uses: prusa3d/prusa-connect-marketplace-publish@v1
+        with:
+          path: release
+          private-key: ${{ env.THROWAWAY_KEY }}
+          check-version: 'false'
+          dry-run: 'true'

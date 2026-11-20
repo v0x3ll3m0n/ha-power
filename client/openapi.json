@@ -1,0 +1,193 @@
+{
+  "components": {
+    "schemas": {
+      "PowerState": {
+        "type": "object",
+        "description": "What Home Assistant says about the plug of one printer.",
+        "properties": {
+          "on": {
+            "type": "boolean",
+            "description": "True when the plug is on."
+          },
+          "available": {
+            "type": "boolean",
+            "description": "False when Home Assistant reports the plug as unavailable. The plug cannot be switched then."
+          },
+          "entity": {
+            "type": "string",
+            "description": "The Home Assistant entity the printer is mapped to, such as switch.mk4_plug."
+          }
+        },
+        "required": [
+          "on",
+          "available",
+          "entity"
+        ]
+      },
+      "PowerRequest": {
+        "type": "object",
+        "description": "The state a person asks the plug to take.",
+        "properties": {
+          "on": {
+            "type": "boolean",
+            "description": "True turns the plug on and false turns it off."
+          }
+        },
+        "required": [
+          "on"
+        ]
+      },
+      "PowerAnswer": {
+        "type": "object",
+        "description": "The state the plug was asked to take, once Home Assistant accepted the call.",
+        "properties": {
+          "on": {
+            "type": "boolean",
+            "description": "The state that was asked for."
+          }
+        },
+        "required": [
+          "on"
+        ]
+      },
+      "Refusal": {
+        "type": "object",
+        "description": "One refusal, as RFC 9457 names it. The client SDK reads this shape: code reaches ApiError.code and detail reaches ApiError.message.",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "about:blank, because this module publishes no page per code."
+          },
+          "status": {
+            "type": "integer",
+            "description": "The HTTP status, repeated in the body."
+          },
+          "code": {
+            "type": "string",
+            "description": "The module's own code, such as ha-power/NOT_MAPPED. It is outside the core's registry."
+          },
+          "title": {
+            "type": "string",
+            "description": "What went wrong, in one phrase that never varies."
+          },
+          "detail": {
+            "type": "string",
+            "description": "What went wrong this time. It never holds the token."
+          },
+          "params": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "What the code fills in."
+          },
+          "retryable": {
+            "type": "boolean",
+            "description": "Whether sending the same request again could work."
+          }
+        },
+        "required": [
+          "type",
+          "status",
+          "code",
+          "title",
+          "detail",
+          "params",
+          "retryable"
+        ]
+      }
+    },
+    "responses": {
+      "Refused": {
+        "description": "The module refused the call. The status says which rule it met.",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Refusal"
+            }
+          }
+        }
+      }
+    }
+  },
+  "info": {
+    "title": "ha-power",
+    "version": "0.1.0",
+    "description": "The routes examples/ha-power serves. Every path is relative to the mount the host assigns, and the host serves this document rebased under it at \u003cmount\u003e/openapi.json."
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/modules/com.github.aux.v0x3ll3m0n.ha-power/power/{device}": {
+      "get": {
+        "operationId": "get-power",
+        "summary": "The state of a printer's plug",
+        "description": "Reads the plug the printer is mapped to from Home Assistant. A printer with no entry in the switches setting is refused with 404 and the code ha-power/NOT_MAPPED. A failure of Home Assistant is refused with 502. The host takes view_resource on the module's instance before this is called.",
+        "parameters": [
+          {
+            "name": "device",
+            "in": "path",
+            "required": true,
+            "description": "The id of the printer.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The state of the plug.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PowerState"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        }
+      },
+      "post": {
+        "operationId": "set-power",
+        "summary": "Turn a printer's plug on or off",
+        "description": "Calls switch.turn_on or switch.turn_off in Home Assistant for the entity the printer is mapped to. The caller never names an entity. A printer with no entry in the switches setting is refused with 404. Turning off is refused with 409 while the printer is PRINTING, PAUSED or BUSY (ha-power/PRINTER_BUSY) or its nozzle is hotter than 50 degrees (ha-power/NOZZLE_HOT), and with 503 when the printer's state cannot be read (ha-power/STATE_UNREADABLE). The host takes operate_resource on the module's instance before this is called.",
+        "parameters": [
+          {
+            "name": "device",
+            "in": "path",
+            "required": true,
+            "description": "The id of the printer.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PowerRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Home Assistant accepted the call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PowerAnswer"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Refused"
+          }
+        }
+      }
+    }
+  }
+}

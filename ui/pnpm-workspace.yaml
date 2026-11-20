@@ -1,0 +1,37 @@
+# This package alone. Every JavaScript package in the core's tree is its own
+# pnpm project, and a module's is too: without this file pnpm walks upwards and
+# joins whatever workspace it finds above the module.
+packages:
+  - .
+
+# Written versions stay exact.
+savePrefix: ''
+
+# No dependency here needs a build script, so none is allowed one. pnpm 11
+# refuses every dependency script that allowBuilds does not name. Playwright's
+# install script only prints a hint; the browser comes from
+# `pnpm exec playwright install chromium`.
+allowBuilds: {}
+
+# Refuse to run a script when node_modules has drifted from the lockfile,
+# instead of failing later with a confusing error.
+verifyDepsBeforeRun: error
+
+# pnpm turns the global virtual store off when CI is set and on when it is
+# not, and verifyDepsBeforeRun refuses a run under the other value. Pinned,
+# an install with CI=true is one the dev server starts on.
+enableGlobalVirtualStore: false
+
+# Until the three @prusa packages are on npm, they come from the pinned
+# Prusa Connect checkout that `make core` puts in ../.core. package.json names
+# them by version, the way it will once they are published; delete this block
+# then, and nothing else changes. Standards is copied rather than linked, so its
+# ESLint config loads eslint from this project.
+overrides:
+  '@prusa/connect': 'link:../.core/packages/typescript'
+  '@prusa/connect-ui': 'link:../.core/packages/svelte'
+  '@prusa/frontend-standards': 'file:../.core/packages/standards'
+
+# Nothing publishes the packages to the public registry yet. Left on, pnpm
+# would try to fetch @prusa/connect from there and the install would fail.
+autoInstallPeers: false

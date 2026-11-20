@@ -1,0 +1,28 @@
+{
+  "_meta.language": "English",
+  "_meta.note": "This module's own texts. The host reads this file from locales/en.json beside the bundle's entry and merges it under the module's namespace. Copy it to <tag>.json to translate; a key you leave out falls back to the line here.",
+
+  "power.label": "Power",
+  "power.loading": "Reading the plug...",
+  "power.on": "On",
+  "power.off": "Off",
+  "power.toggle": "Switch the power of this printer",
+  "power.switching": "Switching...",
+  "power.notMapped": "No plug is set for this printer",
+  "power.unavailable": "The plug is unavailable in Home Assistant",
+  "power.reload": "Try again",
+  "power.lock.printing": "Power off is disabled while the printer is printing",
+  "power.lock.paused": "Power off is disabled while the print is paused",
+  "power.lock.busy": "Power off is disabled while the printer is busy",
+  "power.lock.hot": "Power off is disabled while the nozzle is above {limit}",
+  "power.error.ha-power/HA_UNREACHABLE": "Home Assistant is not reachable",
+  "power.error.ha-power/HA_AUTH": "Home Assistant refused the token",
+  "power.error.ha-power/HA_NO_ENTITY": "Home Assistant has no such plug",
+  "power.error.ha-power/HA_FAILED": "Home Assistant failed",
+  "power.error.ha-power/PRINTER_BUSY": "The printer is in use",
+  "power.error.ha-power/NOZZLE_HOT": "The nozzle is still hot",
+  "power.error.ha-power/STATE_UNREADABLE": "The state of the printer could not be read",
+  "power.error.ha-power/NOT_MAPPED": "No plug is set for this printer",
+  "power.error.ha-power/NO_DEVICE": "You may not switch this printer",
+  "power.error.other": "The power could not be changed"
+}
