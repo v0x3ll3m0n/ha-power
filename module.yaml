@@ -10,13 +10,13 @@
 # the operator installed (ADR-20260911-4p6 rule 15).
 
 name: ha-power
-title: Home Assistant power
-summary: Turns each printer's smart plug on and off through a Home Assistant switch, from the printer card and the printer page.
+title: Home Assistant power switch
+summary: Turns each printer's Home Assistant smart plug on and off from the printer card and page, and refuses power off during a print or while the nozzle is hot.
 codeowner: v0x3ll3m0n
 # The kind gives the service runtime, as in examples/spools. The browser half
 # rides in the same declaration as `service.assets`.
 kind: sink
-version: 0.1.0
+version: 0.1.1
 # The same license as Prusa Connect itself, as every module in this tree
 # carries it (see LICENSE).
 license: OCL v1.1 + Micro v1 + NoSaaS v1 + SWAtt v1
@@ -39,11 +39,11 @@ options:
   - key: ha_token
     type: secret
     required: true
-    summary: A Home Assistant long-lived access token. Use the token of a user that may operate only the plugs.
+    summary: A Home Assistant long-lived access token. Create it for a dedicated user that is not an administrator.
   - key: switches
     type: object
     default: "{}"
-    summary: 'Which Home Assistant entity powers which printer, as JSON: {"<device id>": "switch.mk4_plug"}. A printer that is not listed has no toggle.'
+    summary: 'Which Home Assistant entity powers which printer, as JSON: {"<device id>": "switch.mk4_plug"}. The device id is the Printer UUID shown on the Printers tab of the web app. A printer that is not listed has no toggle.'
 
 # The Prusa Connect versions this release runs on. 0.1.0-beta.1 is the first
 # that reads `license`, and it is the core this module is built against.
@@ -57,7 +57,7 @@ egress:
     ports: [8123]
     from: process
     why: Reads the state of a plug and turns it on or off.
-    sends: The long-lived access token and the id of one plug from the switches setting. Nothing else leaves the server.
+    sends: The long-lived access token and the id of one plug from the switches setting, only to the address in ha_url. Nothing else leaves the server.
 
 # No `permissions` key. This module acts only for the person the host
 # authorized. Before it turns a plug off it reads that printer as that person,

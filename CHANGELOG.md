@@ -3,6 +3,19 @@
 What an operator sees change when they upgrade this module, newest release
 first. `version:` in `module.yaml` is the newest heading below.
 
+## 0.1.1 - 2026-11-20
+
+### Changed
+
+- The module's title is Home Assistant power switch, and its summary says that
+  power off is refused during a print or while the nozzle is hot.
+- The Status tab section no longer shows the word Power twice.
+- The setting `ha_token` no longer says that Home Assistant can limit a token to
+  some plugs. It says to create the token for a dedicated user that is not an
+  administrator.
+- The setting `switches` says that the printer id is the Printer UUID on the
+  Printers tab of the web app.
+
 ## 0.1.0 - 2026-11-20
 
 ### Added

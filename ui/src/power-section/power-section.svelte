@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { heldHost } from '../host';
   import { PowerControl } from '../power-control';
 
   interface Props {
@@ -8,11 +7,7 @@
   }
 
   let { deviceId }: Props = $props();
-
-  const t = heldHost().t;
 </script>
 
-<section class="flex flex-col gap-2">
-  <h3 class="text-sm font-medium text-muted-foreground">{t('power.label')}</h3>
-  <PowerControl {deviceId} />
-</section>
+<!-- No heading here. The app draws one from the manifest's section title. -->
+<PowerControl {deviceId} />

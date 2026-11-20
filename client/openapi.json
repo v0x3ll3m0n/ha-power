@@ -110,7 +110,7 @@
   },
   "info": {
     "title": "ha-power",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "The routes examples/ha-power serves. Every path is relative to the mount the host assigns, and the host serves this document rebased under it at \u003cmount\u003e/openapi.json."
   },
   "openapi": "3.1.0",

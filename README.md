@@ -1,11 +1,28 @@
-# The ha-power module
+# Home Assistant power switch for Prusa Connect
 
-A module with both halves that turns each printer's smart plug on and off
-through a Home Assistant `switch.*` entity.
+Turn a printer's smart plug on and off from Prusa Connect. A Power switch
+appears on each printer's card and on its Status tab, and it shows whether the
+plug is on. The plug is a Home Assistant `switch.*` entity.
+
+Power off is refused while the printer is printing, paused or busy, or while its
+nozzle is above 50 degrees. This stops a person from cutting power to a hot
+nozzle or a running print.
+
+**You need:**
+
+- Prusa Connect 0.1.0-beta.1 or later
+- Home Assistant, with a smart plug that shows up as a `switch.*` entity
+- a Home Assistant long-lived access token
+
+The pages below explain how it works, how to install it and how to set it up.
+
+## How it works
+
+The module has two parts.
 
 - The Go process holds the Home Assistant address and token, calls the Home
   Assistant REST API and serves two routes.
-- The Svelte bundle draws a power switch on each printer's card and on its
+- The Svelte bundle draws the power switch on each printer's card and on its
   Status tab. It calls the module's routes through `host.client`, which uses the
   browser's session cookie. The page holds no token.
 
@@ -97,7 +114,7 @@ After you change `openapi.json`, run `make client` and commit what it writes.
 Copy the `release/` directory to the machine that runs Prusa Connect, then:
 
 ```bash
-prusa-connect module add github.com/v0x3ll3m0n/ha-power@0.1.0 -from <release-dir>
+prusa-connect module add github.com/v0x3ll3m0n/ha-power@0.1.1 -from <release-dir>
 ```
 
 Without `-approve` the declaration is written switched off and the command
@@ -115,7 +132,7 @@ and use absolute paths. The container's working directory is `/`, and a relative
 path then points at the read-only root filesystem.
 
 ```bash
-docker exec prusa-connect /prusa_connect module add github.com/v0x3ll3m0n/ha-power@0.1.0 -config /config/config.yaml -from /tmp/ha-power -approve
+docker exec prusa-connect /prusa_connect module add github.com/v0x3ll3m0n/ha-power@0.1.1 -config /config/config.yaml -from /tmp/ha-power -approve
 docker restart prusa-connect
 ```
 
@@ -133,8 +150,11 @@ files that the installer refuses.
    save.
 3. **Name the plugs.** Each plug is a `switch.*` entity. Find its id in
    Settings, Devices & services, Entities (for example `switch.mk4_plug`).
-4. **Find each printer's device id.** On the Pi, with the Prusa Connect API
-   reachable, list the printers and read the `id` field of each:
+4. **Find each printer's id.** In the Prusa Connect web app, open the Printers
+   tab. The id is shown there as "Printer UUID". Copy it for each printer.
+
+   You can also read it from the API. The `id` field of each printer is the
+   same value:
 
    ```bash
    curl -s -b cookies.txt http://<pi>:8080/api/v1/devices

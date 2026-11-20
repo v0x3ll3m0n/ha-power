@@ -2,7 +2,6 @@
   "_meta.language": "English",
   "_meta.note": "This module's own texts. The host reads this file from locales/en.json beside the bundle's entry and merges it under the module's namespace. Copy it to <tag>.json to translate; a key you leave out falls back to the line here.",
 
-  "power.label": "Power",
   "power.loading": "Reading the plug...",
   "power.on": "On",
   "power.off": "Off",

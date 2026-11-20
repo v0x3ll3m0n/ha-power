@@ -65,7 +65,7 @@ import (
 // What this child reports when the host asks it what it is.
 const (
 	name    = "ha-power"
-	release = extension.Version("0.1.0")
+	release = extension.Version("0.1.1")
 )
 
 // openAPI is the fragment describing the two routes, with every path relative
